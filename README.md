@@ -37,4 +37,4 @@ Each test execution generates a video. Failed tests generate a [Playwright trace
 npx playwright show-report
 ```
 
-On GitHub Actions, the videos are visible 
+For test runs on GitHub Actions, the videos can be downloaded from the [run summary page](https://github.com/arjunattam/playwright-experiment/actions/runs/6195975978).
