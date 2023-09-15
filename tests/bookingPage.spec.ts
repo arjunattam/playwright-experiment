@@ -7,32 +7,30 @@ test('Demo slot is available for next 2 business days', async ({ page }) => {
   await page.getByRole('button', { name: 'Schedule a Demo' }).first().click();
 
   const bookingFrame = 'iframe[title="Calendly Scheduling Page"]';
-
   // Ideally Playwright should auto-scroll, but Chrome defers rendering out-of-view iframes
   // Open issue: https://github.com/microsoft/playwright/issues/21054
   await page.locator(bookingFrame).scrollIntoViewIfNeeded();
 
-  // Handle cookie modal on Calendly iframe
+  // Handle cookie modal on the Calendly iframe
   await expect(page.frameLocator(bookingFrame).getByText('We respect your personal privacy')).toBeVisible();
   await page.frameLocator(bookingFrame).getByRole('button', { name: 'Close' }).click();
 
-  const nextWeekdays = getNextWeekdayDates(2);
-  const timeSlots = generateWorkingHourTimes(9, 16);
-  console.log(timeSlots);
+  const nextWeekdays = getNextWeekdayDates(2); // Next 2 Mon-Fri
+  const timeSlots = generateWorkingHourTimes(9, 16); // 30 min slots from 9am to 4pm
 
   await page.frameLocator(bookingFrame).getByLabel(`${nextWeekdays[0]} - Times available`).click();
 
   for (let i = 0; i < timeSlots.length; i++) {
     const timeSlot = timeSlots[i];
     try {
-      await page.frameLocator(bookingFrame).getByRole('button', { name: timeSlot }).click({ timeout: 1000 });
+      // Attempt to book this time slot - if it succeeds, break the loop
+      await page.frameLocator(bookingFrame).getByRole('button', { name: timeSlot }).click({ timeout: 250 });
       await page.frameLocator(bookingFrame).getByLabel(`Next ${timeSlot}`).click();
       console.log('Found and clicked on slot', timeSlot);
       break;
     } catch (error) {
       if (error instanceof errors.TimeoutError) {
-        // Click failed - let's try again
-        console.log('Clicked failed on', timeSlot);
+        // Click failed on this time slot - try again on next loop iteration
       }
     }
   }
