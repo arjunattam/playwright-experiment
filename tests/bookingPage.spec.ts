@@ -1,6 +1,9 @@
-import { test, expect, errors } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 test.use({ timezoneId: 'US/Pacific' });
+
+const START_WORK_DAY = 9; // 9am
+const END_WORK_DAY = 17; // 5pm
 
 test('Demo slot is available for next 2 business days', async ({ page }) => {
   await page.goto('https://www.100ms.live/', { waitUntil: 'domcontentloaded' });
@@ -14,31 +17,50 @@ test('Demo slot is available for next 2 business days', async ({ page }) => {
   // Handle cookie modal on the Calendly iframe
   await expect(page.frameLocator(bookingFrame).getByText('We respect your personal privacy')).toBeVisible();
   await page.frameLocator(bookingFrame).getByRole('button', { name: 'Close' }).click();
-
+  const validTimeSlots = generateWorkingHourTimes(START_WORK_DAY, END_WORK_DAY);
   const nextWeekdays = getNextWeekdayDates(2); // Next 2 Mon-Fri
-  const timeSlots = generateWorkingHourTimes(9, 16); // 30 min slots from 9am to 4pm
 
-  await page.frameLocator(bookingFrame).getByLabel(`${nextWeekdays[0]} - Times available`).click();
+  // TODO: support multiple months
+  // if no available slot found on the first month, try the next month by clicking on
+  // button.aria-label = go to previous page and 
+  // button.aria-label = next month
+  const availableTimeSlots: string[] = [];
 
-  for (let i = 0; i < timeSlots.length; i++) {
-    const timeSlot = timeSlots[i];
-    try {
-      // Attempt to book this time slot - if it succeeds, break the loop
-      await page.frameLocator(bookingFrame).getByRole('button', { name: timeSlot }).click({ timeout: 250 });
+  for (const weekday of nextWeekdays) {
+    await page.frameLocator(bookingFrame).getByLabel(`${weekday} - Times available`).click();
+    const buttons = await page.frameLocator(bookingFrame).getByRole('button');
+
+    for (const button of await buttons.all()) {
+      // TODO: optimise this - populates the trace viewer with multiple steps
+      const text = await button.innerText();
+      if (isTimestampString(text) && validTimeSlots.indexOf(text) >= 0) {
+        // text looks like '11:00am' and is inside working hours
+        availableTimeSlots.push(text);
+      }
+    }
+
+    if (availableTimeSlots.length > 0) {
+      // attempt to click the working slot
+      const timeSlot = availableTimeSlots[0];
+      await page.frameLocator(bookingFrame).getByRole('button', { name: timeSlot }).click();
       await page.frameLocator(bookingFrame).getByLabel(`Next ${timeSlot}`).click();
       console.log('Found and clicked on slot', timeSlot);
       break;
-    } catch (error) {
-      if (error instanceof errors.TimeoutError) {
-        // Click failed on this time slot - try again on next loop iteration
-      }
     }
+
+    // no available slot found, try the next day
+    await page.frameLocator(bookingFrame).getByLabel('Go to previous page').click();
   }
+
+  // ensure we have at least one available time slot
+  expect(availableTimeSlots.length).toBeTruthy();
 });
 
 function generateWorkingHourTimes(start, end) {
+  // start time of 30 mins slots from start to end
+  // for 9am-5pm, this will generate [9:00am, 9:30am, 10:00am, ... 4:30pm]
   const arr = [start];
-  for (let i = start; i < end; i = i + 0.5) {
+  for (let i = start; i < end - 0.5; i = i + 0.5) {
     arr.push(i + 0.5);
   }
   return arr.map(hour => convert24HrTo12Hr(convertNumberToTime(hour)));
@@ -50,6 +72,11 @@ function convertNumberToTime(number) {
   return minutes === 0 ? `${hours}:00` : `${hours}:${minutes}`;
 }
 
+function isTimestampString(timestamp) {
+  const regex = /^(1[0-2]|0?[1-9]):([0-5][0-9])([ap]m)$/i;
+  return regex.test(timestamp);
+}
+
 function convert24HrTo12Hr(time) {
   const [hours, minutes] = time.split(':');
   const suffix = hours >= 12 ? 'pm' : 'am';
@@ -58,6 +85,7 @@ function convert24HrTo12Hr(time) {
 }
 
 function getNextWeekdayDates(count) {
+  // returns count number of weekdays in format 'Friday, September 29'
   const dates: string[] = [];
   let currentDate = new Date();
   const formatOptions = { weekday: 'long', month: 'long', day: 'numeric' };
